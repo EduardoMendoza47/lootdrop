@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⚔ LOOT DROP — Pixel Chest Simulator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:        #060d1f;
+      --panel:     #0b1830;
+      --border:    #1a3a7a;
+      --common:    #aaaaaa;
+      --rare:      #4499ff;
+      --epic:      #bb44ff;
+      --legendary: #ffcc00;
+      --text:      #cce0ff;
+      --accent:    #1e44bb;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: 'Press Start 2P', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px 16px 40px;
+      background-image:
+        linear-gradient(rgba(30,60,150,.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30,60,150,.07) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+
+    /* HEADER */
+    .header { text-align:center; margin-bottom:28px; }
+    .header h1 {
+      font-size: clamp(.9rem,3vw,1.6rem);
+      color: var(--legendary);
+      text-shadow: 4px 4px 0 #7a5500, 0 0 30px #ffcc0066;
+      letter-spacing: 3px;
+      margin-bottom: 8px;
+    }
+    .header .sub { font-size:.4rem; color:var(--rare); letter-spacing:5px; }
+
+    /* LAYOUT */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      max-width: 940px;
+      margin: 0 auto;
+    }
+    @media(max-width:640px){ .grid{ grid-template-columns:1fr; } }
+
+    /* PANELS */
+    .panel {
+      background: var(--panel);
+      border: 4px solid var(--border);
+      box-shadow: 4px 4px 0 #010509, inset 0 0 0 2px #060d1f;
+      padding: 16px;
+    }
+    .panel + .panel { margin-top: 16px; }
+    .panel-title {
+      font-size: .5rem;
+      color: var(--legendary);
+      text-shadow: 2px 2px 0 #554400;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    /* CHEST */
+    .chest-col { display:flex; flex-direction:column; align-items:center; gap:14px; }
+    #chestCanvas { image-rendering:pixelated; cursor:pointer; max-width:100%; }
+
+    /* BUTTON */
+    .btn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: .65rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 12px 20px;
+      border-bottom: 4px solid #0b2266;
+      border-right: 4px solid #0b2266;
+      cursor: pointer;
+      text-shadow: 2px 2px 0 #000;
+      transition: transform .1s, border-width .1s;
+      letter-spacing: 1px;
+      width: 100%;
+    }
+    .btn:hover  { background:#2855dd; }
+    .btn:active { border-bottom-width:2px; border-right-width:2px; transform:translate(2px,2px); }
+    .btn:disabled { opacity:.4; cursor:not-allowed; transform:none; }
+
+    /* RESULT */
+    .result-box {
+      width:100%; min-height:72px;
+      background:#02070f; border:3px solid var(--border);
+      display:flex; flex-direction:column; align-items:center;
+      justify-content:center; gap:7px; padding:12px 8px;
+      text-align:center; transition:box-shadow .4s;
+    }
+    .result-rarity {
+      font-size: clamp(.7rem,2.5vw,1rem);
+      letter-spacing:2px; opacity:0; transform:scale(.5);
+      transition: opacity .35s, transform .35s;
+    }
+    .result-rarity.show { opacity:1; transform:scale(1); }
+    .result-label { font-size:.35rem; color:#6677aa; opacity:0; transition:opacity .35s .2s; }
+    .result-label.show { opacity:1; }
+
+    /* STATS */
+    .stats-row { display:flex; gap:6px; width:100%; }
+    .stat-chip {
+      flex:1; background:#02070f; border:2px solid var(--border);
+      padding:7px 4px; text-align:center; font-size:.28rem; line-height:1.8;
+    }
+    .stat-num { font-size:.65rem; display:block; }
+
+    /* INPUTS */
+    .rarity-inputs { display:flex; flex-direction:column; gap:12px; }
+    .rarity-row    { display:flex; align-items:center; gap:8px; }
+    .rarity-label  { font-size:.44rem; min-width:115px; }
+    .rarity-input {
+      font-family:'Press Start 2P',monospace; font-size:.6rem;
+      width:64px; padding:7px 6px;
+      background:#02070f; color:#fff;
+      border:2px solid var(--border);
+      border-bottom:3px solid #010408; border-right:3px solid #010408;
+      text-align:right;
+    }
+    .rarity-input:focus { outline:none; border-color:var(--rare); }
+    .pct { font-size:.45rem; color:#446; }
+    .total-row { font-size:.42rem; text-align:right; padding-top:10px; border-top:2px solid var(--border); }
+    .ok  { color:#44ff88; }
+    .bad { color:#ff4444; }
+
+    /* RARITY COLORS */
+    .common    { color:var(--common);    }
+    .rare      { color:var(--rare);      }
+    .epic      { color:var(--epic);      }
+    .legendary { color:var(--legendary); }
+
+    /* CHART */
+    .chart-wrap { position:relative; height:175px; margin-top:6px; }
+
+    /* HISTORY */
+    .history-list {
+      max-height:130px; overflow-y:auto;
+      display:flex; flex-direction:column; gap:4px; margin-top:6px;
+    }
+    .history-list::-webkit-scrollbar { width:4px; }
+    .history-list::-webkit-scrollbar-track { background:#02070f; }
+    .history-list::-webkit-scrollbar-thumb { background:var(--border); }
+    .h-item {
+      font-size:.32rem; padding:5px 8px; background:#02070f;
+      border-left:3px solid currentColor;
+      display:flex; justify-content:space-between;
+    }
+
+    /* PARTICLES */
+    #pCanvas { position:fixed; top:0; left:0; pointer-events:none; z-index:999; }
+
+    /* ANIMATIONS */
+    @keyframes shake {
+      0%,100%{ transform:translateX(0); }
+      20%    { transform:translateX(-7px) rotate(-2deg); }
+      40%    { transform:translateX(7px)  rotate(2deg); }
+      60%    { transform:translateX(-5px) rotate(-1deg); }
+      80%    { transform:translateX(5px)  rotate(1deg); }
+    }
+    .shaking { animation:shake .45s ease-in-out; }
+
+    @keyframes legendGlow {
+      0%,100%{ text-shadow:3px 3px 0 #7a5500, 0 0 8px #ffcc00aa; }
+      50%    { text-shadow:3px 3px 0 #7a5500, 0 0 30px #ffcc00, 0 0 55px #ffaa00; }
+    }
+    .legend-glow { animation:legendGlow 1s infinite; }
+
+    @keyframes epicPulse {
+      0%,100%{ text-shadow:3px 3px 0 #440066, 0 0 8px #bb44ffaa; }
+      50%    { text-shadow:3px 3px 0 #440066, 0 0 25px #bb44ff, 0 0 45px #9900ee; }
+    }
+    .epic-glow { animation:epicPulse 1.2s infinite; }
+  </style>
+</head>
+<body>
+
+<canvas id="pCanvas"></canvas>
+
+<div class="header">
+  <h1>&#9876; LOOT DROP &#9876;</h1>
+  <p class="sub">-- PIXEL CHEST SIMULATOR --</p>
+</div>
+
+<div class="grid">
+
+  <!-- LEFT: COFRE -->
+  <div class="panel chest-col">
+    <div class="panel-title" style="width:100%">&#9658; COFRE DE BOTIN</div>
+    <canvas id="chestCanvas" width="224" height="224"></canvas>
+    <button class="btn" id="btnOpen">[ ABRIR COFRE ]</button>
+    <div class="result-box" id="resultBox">
+      <div class="result-rarity" id="resultRarity"></div>
+      <div class="result-label"  id="resultLabel">-- haz clic para abrir --</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-chip"><span class="stat-num common"    id="sC">0</span>COMUN</div>
+      <div class="stat-chip"><span class="stat-num rare"      id="sR">0</span>RARO</div>
+      <div class="stat-chip"><span class="stat-num epic"      id="sE">0</span>EPICO</div>
+      <div class="stat-chip"><span class="stat-num legendary" id="sL">0</span>LEGEND.</div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div>
+    <!-- Probabilidades -->
+    <div class="panel">
+      <div class="panel-title">&#9658; PROBABILIDADES</div>
+      <div class="rarity-inputs">
+        <div class="rarity-row">
+          <span class="rarity-label common">&#9679; COMUN</span>
+          <input class="rarity-input" type="number" id="pC" value="60" min="0" max="100" step="0.1">
+          <span class="pct">%</span>
+        </div>
+        <div class="rarity-row">
+          <span class="rarity-label rare">&#9679; RARO</span>
+          <input class="rarity-input" type="number" id="pR" value="25" min="0" max="100" step="0.1">
+          <span class="pct">%</span>
+        </div>
+        <div class="rarity-row">
+          <span class="rarity-label epic">&#9679; EPICO</span>
+          <input class="rarity-input" type="number" id="pE" value="12" min="0" max="100" step="0.1">
+          <span class="pct">%</span>
+        </div>
+        <div class="rarity-row">
+          <span class="rarity-label legendary">&#9679; LEGENDARIO</span>
+          <input class="rarity-input" type="number" id="pL" value="3" min="0" max="100" step="0.1">
+          <span class="pct">%</span>
+        </div>
+        <div class="total-row">TOTAL: <span id="totalSpan" class="ok">100.0</span>%</div>
+      </div>
+    </div>
+
+    <!-- Grafica -->
+    <div class="panel">
+      <div class="panel-title">&#9658; GRAFICA DE RAREZA</div>
+      <div class="chart-wrap"><canvas id="probChart"></canvas></div>
+    </div>
+
+    <!-- Historial -->
+    <div class="panel">
+      <div class="panel-title">&#9658; HISTORIAL DE DROPS</div>
+      <div class="history-list" id="historyList">
+        <div class="h-item" style="color:#334466">-- Sin aperturas aun --</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /grid -->
+
+<script>
+/* ================================================
+   PIXEL ART CHEST
+================================================ */
+const cc  = document.getElementById('chestCanvas');
+const ctx = cc.getContext('2d');
+const S   = 14;
+
+const P = {
+  _:null, D:'#2e1200', B:'#7a3f0e', M:'#a05a1a',
+  L:'#c8812a', G:'#e8c030', S:'#8888aa', K:'#111111'
+};
+
+const LID = [
+  [P._,P._,P._,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P._,P._,P._],
+  [P._,P._,P.D,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.D,P._,P._],
+  [P._,P.D,P.M,P.L,P.L,P.L,P.L,P.L,P.L,P.L,P.L,P.L,P.L,P.M,P.D,P._],
+  [P.D,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.M,P.D],
+  [P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D],
+];
+
+const BODY = [
+  [P.D,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.B,P.G,P.G,P.G,P.G,P.B,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.G,P.K,P.K,P.K,P.K,P.G,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.G,P.K,P.G,P.G,P.K,P.G,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.G,P.K,P.K,P.K,P.K,P.G,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.B,P.G,P.G,P.G,P.G,P.B,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.B,P.D],
+  [P.D,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.S,P.D],
+  [P._,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P.D,P._],
+];
+
+function drawGrid(grid, ox, oy) {
+  grid.forEach((row,r) => row.forEach((col,c) => {
+    if(col){ ctx.fillStyle=col; ctx.fillRect(ox+c*S, oy+r*S, S, S); }
+  }));
+}
+
+let cState='closed', cProg=0, glowCol=null;
+
+function drawChest() {
+  ctx.clearRect(0,0,224,224);
+  if(glowCol && cProg>.5){ ctx.shadowColor=glowCol; ctx.shadowBlur=28*((cProg-.5)*2); }
+  else { ctx.shadowBlur=0; }
+
+  drawGrid(BODY, 0, 5*S);
+  ctx.shadowBlur=0;
+
+  if(glowCol && cProg>.6){
+    const a=Math.min(1,(cProg-.6)/.4);
+    ctx.fillStyle=glowCol+Math.round(a*55).toString(16).padStart(2,'0');
+    ctx.fillRect(S,6*S,14*S,9*S);
+  }
+
+  ctx.save();
+  ctx.translate(8*S, 5*S);
+  ctx.rotate(-cProg*Math.PI*.75);
+  if(cProg<.85) drawGrid(LID, -8*S, -5*S);
+  ctx.restore();
+}
+
+function animateOpen(cb){
+  cState='opening'; cProg=0;
+  cc.classList.add('shaking');
+  setTimeout(()=>{
+    cc.classList.remove('shaking');
+    const t0=performance.now(), dur=750;
+    const step=now=>{
+      const raw=Math.min(1,(now-t0)/dur);
+      cProg=1-Math.pow(1-raw,3);
+      drawChest();
+      if(raw<1) requestAnimationFrame(step);
+      else{ cState='open'; cb(); }
+    };
+    requestAnimationFrame(step);
+  }, 460);
+}
+
+function resetChest(){ cState='closed'; cProg=0; glowCol=null; drawChest(); }
+drawChest();
+
+/* ================================================
+   CHART
+================================================ */
+const chart = new Chart(document.getElementById('probChart').getContext('2d'),{
+  type:'bar',
+  data:{
+    labels:['COMUN','RARO','EPICO','LEGEND.'],
+    datasets:[{
+      data:[60,25,12,3],
+      backgroundColor:['#aaaaaa22','#4499ff22','#bb44ff22','#ffcc0022'],
+      borderColor:    ['#aaaaaa',  '#4499ff',  '#bb44ff',  '#ffcc00'],
+      borderWidth:3,
+    }]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false,
+    animation:{duration:350},
+    plugins:{
+      legend:{display:false},
+      tooltip:{
+        backgroundColor:'#0b1830',
+        titleFont:{family:"'Press Start 2P'",size:7},
+        bodyFont:{family:"'Press Start 2P'",size:7},
+        callbacks:{label:c=>` ${c.raw}%`}
+      }
+    },
+    scales:{
+      x:{ticks:{color:'#7799bb',font:{family:"'Press Start 2P'",size:6}},grid:{color:'#1a3a7a33'}},
+      y:{min:0,max:100,ticks:{color:'#7799bb',font:{family:"'Press Start 2P'",size:6},callback:v=>v+'%'},grid:{color:'#1a3a7a33'}}
+    }
+  }
+});
+
+function updateChart(){
+  const v=getVals();
+  chart.data.datasets[0].data=[v.c,v.r,v.e,v.l];
+  chart.update();
+}
+
+/* ================================================
+   LOGIC
+================================================ */
+const stats={c:0,r:0,e:0,l:0};
+let opens=0;
+
+function getVals(){
+  return{
+    c:+document.getElementById('pC').value||0,
+    r:+document.getElementById('pR').value||0,
+    e:+document.getElementById('pE').value||0,
+    l:+document.getElementById('pL').value||0
+  };
+}
+
+function checkTotal(){
+  const v=getVals(), tot=v.c+v.r+v.e+v.l;
+  const sp=document.getElementById('totalSpan');
+  sp.textContent=tot.toFixed(1);
+  sp.className=Math.abs(tot-100)<.05?'ok':'bad';
+  document.getElementById('btnOpen').disabled=Math.abs(tot-100)>=.5;
+}
+
+function roll(){
+  const v=getVals(),n=Math.random()*100;
+  if(n<v.l)          return 'l';
+  if(n<v.l+v.e)      return 'e';
+  if(n<v.l+v.e+v.r)  return 'r';
+  return 'c';
+}
+
+const NAMES  ={c:'COMUN',    r:'RARO',  e:'EPICO',  l:'LEGENDARIO *'};
+const COLORS ={c:'#aaaaaa', r:'#4499ff',e:'#bb44ff',l:'#ffcc00'};
+const CLASSES={c:'common',  r:'rare',  e:'epic',    l:'legendary'};
+
+function updateStats(){
+  document.getElementById('sC').textContent=stats.c;
+  document.getElementById('sR').textContent=stats.r;
+  document.getElementById('sE').textContent=stats.e;
+  document.getElementById('sL').textContent=stats.l;
+}
+
+function addHistory(k){
+  const list=document.getElementById('historyList');
+  if(list.firstChild&&list.firstChild.style.color==='rgb(51, 68, 102)') list.innerHTML='';
+  const t=new Date();
+  const hm=t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0');
+  const d=document.createElement('div');
+  d.className='h-item '+CLASSES[k];
+  d.style.color=COLORS[k];
+  d.innerHTML='<span>#'+opens+' '+NAMES[k]+'</span><span>'+hm+'</span>';
+  list.insertBefore(d,list.firstChild);
+  while(list.children.length>20) list.removeChild(list.lastChild);
+}
+
+document.getElementById('btnOpen').addEventListener('click',()=>{
+  if(cState==='open'||cState==='opening'){
+    resetChest();
+    const rar=document.getElementById('resultRarity');
+    const lbl=document.getElementById('resultLabel');
+    rar.classList.remove('show','legend-glow','epic-glow');
+    lbl.classList.remove('show');
+    lbl.textContent='-- haz clic para abrir --';
+    lbl.style.color='';
+    document.getElementById('resultBox').style.boxShadow='';
+    document.getElementById('btnOpen').textContent='[ ABRIR COFRE ]';
+    return;
+  }
+
+  document.getElementById('btnOpen').disabled=true;
+  const key=roll();
+  glowCol=COLORS[key];
+
+  animateOpen(()=>{
+    const rar=document.getElementById('resultRarity');
+    const lbl=document.getElementById('resultLabel');
+
+    rar.textContent=NAMES[key];
+    rar.style.color=COLORS[key];
+    rar.style.textShadow='3px 3px 0 #000, 0 0 14px '+COLORS[key];
+    rar.classList.remove('legend-glow','epic-glow');
+    if(key==='l') rar.classList.add('legend-glow');
+    if(key==='e') rar.classList.add('epic-glow');
+    rar.classList.add('show');
+
+    lbl.textContent=key==='l'?'!! OBJETO LEGENDARIO !!':
+                    key==='e'?'! Objeto epico obtenido !':
+                    key==='r'?'Objeto raro obtenido':'Objeto comun obtenido';
+    lbl.style.color=COLORS[key];
+    lbl.classList.add('show');
+
+    document.getElementById('resultBox').style.boxShadow=
+      '0 0 22px '+COLORS[key]+'55, inset 0 0 18px '+COLORS[key]+'1a';
+
+    if(key==='l') spawnParticles(COLORS[key],90);
+    else if(key==='e') spawnParticles(COLORS[key],45);
+    else if(key==='r') spawnParticles(COLORS[key],18);
+
+    stats[key]++; opens++;
+    updateStats();
+    addHistory(key);
+    document.getElementById('btnOpen').disabled=false;
+    document.getElementById('btnOpen').textContent='[ CERRAR / RESET ]';
+  });
+});
+
+['pC','pR','pE','pL'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{ checkTotal(); updateChart(); });
+});
+checkTotal();
+
+/* ================================================
+   PARTICLES
+================================================ */
+const pc=document.getElementById('pCanvas');
+const pctx=pc.getContext('2d');
+let pts=[],running=false;
+
+function resize(){ pc.width=innerWidth; pc.height=innerHeight; }
+resize(); window.addEventListener('resize',resize);
+
+function spawnParticles(color,n){
+  const rect=cc.getBoundingClientRect();
+  const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+  for(let i=0;i<n;i++){
+    pts.push({
+      x:cx,y:cy,
+      vx:(Math.random()-.5)*11,
+      vy:(Math.random()-.85)*13,
+      size:Math.random()*5+2,
+      color,life:1,
+      decay:Math.random()*.018+.008,
+      gravity:.28
+    });
+  }
+  if(!running) loopParts();
+}
+
+function loopParts(){
+  running=true;
+  pctx.clearRect(0,0,pc.width,pc.height);
+  pts=pts.filter(p=>p.life>0);
+  pts.forEach(p=>{
+    p.x+=p.vx; p.y+=p.vy; p.vy+=p.gravity; p.life-=p.decay;
+    pctx.globalAlpha=p.life;
+    pctx.fillStyle=p.color;
+    const s=Math.ceil(p.size);
+    pctx.fillRect(Math.round(p.x-s/2),Math.round(p.y-s/2),s,s);
+  });
+  pctx.globalAlpha=1;
+  if(pts.length) requestAnimationFrame(loopParts);
+  else{ running=false; pctx.clearRect(0,0,pc.width,pc.height); }
+}
+</script>
+</body>
+</html>
